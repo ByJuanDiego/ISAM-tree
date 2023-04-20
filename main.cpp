@@ -3,7 +3,11 @@
 #include "record.hpp"
 
 int main() {
-    std::cout << DataPage<Record>::N << std::endl;
+    std::function<char *(Record &)> index = [&](Record &record) -> char * {
+        return record.code;
+    };
+
+    ISAM<char[5], Record, TYPE(index)> isam;
     std::cout << "Hello, World!" << std::endl;
     return 0;
 }

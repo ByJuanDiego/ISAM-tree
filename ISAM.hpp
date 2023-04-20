@@ -7,6 +7,7 @@
 
 #define BUFFER_SIZE 2048u
 #define SIZE(type) sizeof(type)
+#define TYPE(type) decltype(type)
 #define null (-1)
 
 #include <functional>
@@ -44,11 +45,9 @@ struct IndexPage {
 
     long locate(KeyType key) {
         int i = 0;
-        for (; ((i < n_keys) && (key > keys[i])); ++i);
+        for (; ((i < n_keys) && (key >= keys[i])); ++i);
         return children[i];
     }
-
-
 };
 
 template<typename RecordType>
@@ -66,7 +65,6 @@ struct DataPage {
 
 template<typename KeyType, typename RecordType, typename Index>
 class ISAM {
-
 private:
 
     /* Three levels of index files that stores index pages */
@@ -74,7 +72,7 @@ private:
     std::fstream index_file2;
     std::fstream index_file3;
 
-    static auto index_file_name = [](int i) {
+    std::function<std::string(int)> index_file_name = [](int i) {
         return "./database/isam/index" + std::to_string(i) + ".dat";
     }; //< Gets the name of the ith index file
 
@@ -86,7 +84,7 @@ private:
 
     std::_Ios_Openmode flags = std::ios_base::in | std::ios_base::out | std::ios_base::binary; //< Open mode flags
 
-    Index index;
+    Index index; //< Receives a `RecordType` and returns its `KeyType` associated
 
 public:
 
@@ -102,52 +100,54 @@ public:
     }
 
     std::vector<RecordType> search(KeyType key) {
+        // ⬇️ inits an empty `std::vector` and open the files
         std::vector<RecordType> records;
         index_file1.open(index_file_name(1), flags);
         index_file2.open(index_file_name(2), flags);
         index_file3.open(index_file_name(3), flags);
         data_file.open(data_file_name, flags);
 
-        // ----------------------- first index level -----------------------
+        //----------------------------------- first index level --------------------------------------------------------
         IndexPage<KeyType> index1;
         index_file1.seekg(std::ios::beg);
-        index1.read(index_file1);                       //< loads the unique index1 page in RAM
-        long descend_to_index_2 = index1.locate(key);   //< searches the physical pointer to descend to the second level
+        index1.read(index_file1);                     //< loads the unique index1 page in RAM
+        long descend_to_index_2 = index1.locate(key); //< searches the physical pointer to descend to the second level
 
-        // ----------------------- second index level  -----------------------
+        //----------------------------------- second index level  ------------------------------------------------------
         IndexPage<KeyType> index2;
         index_file2.seekg(descend_to_index_2);
-        index2.read(index_file2);                       //< loads an index2 page in RAM
-        long descend_to_index_3 = index2.locate(key);   //< searches the physical pointer to descend to the last index level
+        index2.read(index_file2);                     //< loads an index2 page in RAM
+        long descend_to_index_3 = index2.locate(key); //< searches the pointer to descend to the last index level
 
-        // ----------------------- third (last) index level -----------------------
+        //----------------------------------- third (last) index level -------------------------------------------------
         IndexPage<KeyType> index3;
         index_file3.seekg(descend_to_index_3);
-        index3.read(index_file3);                       //< loads an index3 page in RAM
-        long data_page = index3.locate(key);            //< searches the physical pointer to descend to a leaf page
+        index3.read(index_file3);                     //< loads an index3 page in RAM
+        long data_page = index3.locate(key);          //< searches the physical pointer to descend to a leaf page
 
-        // ----------------------- records -----------------------
+        //----------------------------------- records ------------------------------------------------------------------
         DataPage<RecordType> leaf;
 
-        do {                                            //< iterates over all the record pages until the end is reached
+        do {                                          //< iterates over all the record pages until the end is reached
             data_file.seekg(data_page);
             leaf.read(data_file);
 
-            for (int i = 0; i < leaf.count; ++i) {      //< iterates the `leaf.count` records in the current page
+            for (int i = 0; i < leaf.count; ++i) {    //< iterates the `leaf.count` records in the current page
                 if (index(leaf.records[i]) != key) {
                     continue;
                 }
-                records.push_back(leaf.records[i]);     //< if the `record.key` equals `key`, pushes to the `std::vector`
+                records.push_back(leaf.records[i]);   //< if the `record.key` equals `key`, pushes to the `std::vector`
             }
 
-            data_page = leaf.next;                      //< updates the `data_page` pointer for the next iteration
+            data_page = leaf.next;                    //< updates the `data_page` pointer for the next iteration
         } while (data_page != null);
 
-        index_file1.close();                            // finally,
-        index_file2.close();                            // closes
-        index_file3.close();                            // each
-        data_file.close();                              // file
-        return records;                                 // and returns the result of the search.
+        index_file1.close();
+        index_file2.close();
+        index_file3.close();
+        data_file.close();
+        return records;
+        // ⬆️ closes each file and returns the result of the search.
     }
 };
 
