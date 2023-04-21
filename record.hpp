@@ -7,6 +7,7 @@
 
 #include <string>
 #include <sstream>
+#include <fstream>
 
 struct Record {
     char name[20];
@@ -17,6 +18,11 @@ struct Record {
         std::stringstream ss;
         ss << "(" << name << ", " << code << ", " << cycle << ")";
         return ss.str();
+    }
+
+    friend std::ifstream &operator>>(std::ifstream &in, Record &record) {
+        in.read((char* ) &record, sizeof(Record));
+        return in;
     }
 };
 

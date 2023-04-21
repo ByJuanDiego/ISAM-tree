@@ -14,22 +14,22 @@
 #include <cmath>
 
 
-#define BUFFER_SIZE 2048lu
+#define BUFFER_SIZE 256
 #define SIZE(type) sizeof(type)
 #define TYPE(type) decltype(type)
 #define null (-1)
-
-#define CLOSE_FILES \
-index_file1.close(); \
-index_file2.close(); \
-index_file3.close(); \
-data_file.close()
 
 #define OPEN_FILES \
 index_file1.open(index_file_name(1), flags); \
 index_file2.open(index_file_name(2), flags); \
 index_file3.open(index_file_name(3), flags); \
 data_file.open(data_file_name, flags)
+
+#define CLOSE_FILES \
+index_file1.close(); \
+index_file2.close(); \
+index_file3.close(); \
+data_file.close()
 
 
 /* `M` stores the number of keys in an index page
@@ -73,8 +73,13 @@ struct DataPage {
 
     explicit DataPage() = default;
 
-    void read(std::fstream &file) {
+    std::fstream &read(std::fstream &file) {
         file.read((char *) this, SIZE(DataPage<RecordType>));
+        return file;
+    }
+
+    void write(std::fstream &file) {
+        file.write((char *) this, SIZE(DataPage<RecordType>));
     }
 };
 
@@ -88,7 +93,7 @@ private:
     std::fstream index_file3;
 
     std::function<std::string(int)> index_file_name = [](int i) {
-        return "./database/isam/index" + std::to_string(i) + ".dat";
+        return "./database/index" + std::to_string(i) + ".dat";
     }; //< Gets the name of the ith index file
 
 
@@ -102,34 +107,96 @@ private:
     Index index; //< Receives a `RecordType` and returns its `KeyType` associated
 
     long locate(KeyType key) {
-        //----------------------------------- first index level --------------------------------------------------------
+        /************************************** third (top) index level  **********************************************/
         IndexPage<KeyType> index1;
         index_file1.seekg(std::ios::beg);
         index1.read(index_file1);                     //< loads the unique index1 page in RAM
         long descend_to_index_2 = index1.locate(key); //< searches the physical pointer to descend to the second level
 
-        //----------------------------------- second index level  ------------------------------------------------------
+        /************************************** second index level ****************************************************/
         IndexPage<KeyType> index2;
         index_file2.seekg(descend_to_index_2);
         index2.read(index_file2);                     //< loads an index2 page in RAM
         long descend_to_index_3 = index2.locate(key); //< searches the pointer to descend to the last index level
 
-        //----------------------------------- third (last) index level -------------------------------------------------
+        /************************************** first (base) index level **********************************************/
         IndexPage<KeyType> index3;
         index_file3.seekg(descend_to_index_3);
         index3.read(index_file3);                     //< loads an index3 page in RAM
         return index3.locate(key);                    //< searches the physical pointer to descend to a leaf page
     }
 
+    void build_data_pages(std::ifstream &sorted_file, int data_pages) {
+        data_file.open(data_file_name, std::ios::app);
+
+        for (int i = 0; i < data_pages; ++i) {
+            DataPage<RecordType> ram_page;
+            RecordType record;
+
+            while ((ram_page.n_records < N<RecordType>)) {
+                if ((sorted_file >> record)) {
+                    ram_page.records[ram_page.n_records++] = record;
+                    continue;
+                }
+                if (ram_page.n_records == 0) {
+                    data_file.close();
+                    return;
+                }
+            }
+            data_file.write((char *) &ram_page, SIZE(DataPage<RecordType>));
+        }
+
+        data_file.close();
+    }
+
+    void build_index_pages(int number_of_index_pages) {
+        // TODO
+    }
+
 public:
 
     explicit ISAM(std::string file_name) : data_file_name(std::move(file_name)) {
-        data_file.open(this->file_name, flags);
+        data_file.open(data_file_name, std::ios_base::app);
         data_file.close();
     }
 
     ISAM() = default;
 
+    /******************************************************************************************************************/
+    /* This member function must be called once, since it initializes the tree structure levels, which are static.    */
+    /******************************************************************************************************************/
+    void build_static_tree(const std::string &sorted_file_name) {
+        std::ifstream sorted_file(sorted_file_name, std::ios::in | std::ios::binary);
+        if (!sorted_file.is_open()) {
+            throw std::runtime_error("Cannot open the file: " + std::string(sorted_file_name));
+        }
+
+        sorted_file.seekg(std::ios::end);
+        long n_bytes = sorted_file.tellg();
+        long n_records = n_bytes / SIZE(RecordType); //< Calculates the number of records in `sorted_file`
+        long n_record_pages = std::ceil(double(n_records) / N<RecordType>); //< Calculates the number of data pages
+
+        build_data_pages(sorted_file, n_record_pages); //< In charge of build the data pages @ `data_file`
+
+        int r1 = std::ceil(double(n_record_pages) / (M<KeyType> + 1)); //< first (base) level number of index pages
+        int r2 = std::ceil(double(r1) / (M<KeyType> + 1));             //< second (mid) level n...
+        int r3 = std::ceil(double(r2) / (M<KeyType> + 1));             //< third  (top) level n...
+
+        build_index_pages(r1);
+        build_index_pages(r2);
+        build_index_pages(r3);
+
+        // If everything worked correctly, at this point a functional ISAM was initialized successfully
+    }
+
+    /******************************************************************************************************************/
+    /* This member function makes the following assumption                                                            */
+    /*   • The three indexing levels are already created, so the criteria for descending in the tree is well-defined. */
+    /*                                                                                                                */
+    /* In addition, by ISAM definition we have                                                                        */
+    /*   • The three indexing levels are totally static, so the tree do not admit the split of indexing pages.        */
+    /*   • If the selected insertion page is full, a data page split occurs.                                          */
+    /******************************************************************************************************************/
     void insert(RecordType &record) {
         OPEN_FILES; //< open the files
 
@@ -170,18 +237,18 @@ public:
         if (non_full_data_page_position != null) {//< if a non-full data page was found, a `push_back` takes place
             data_page.records[data_page.n_records++] = record;
             data_file.seekp(non_full_data_page_position);
-            data_file.write((char *) &data_page, SIZE(DataPage<RecordType>));
+            data_page.write(data_file);
         } else {//< otherwise, a new `overflow` data page is created
             DataPage<RecordType> new_page;
             new_page.records[new_page.n_records++] = record;
             data_file.seekp(std::ios::end);
 
             long insertion_position = data_file.tellp();
-            data_file.write((char *) &new_page, SIZE(DataPage<RecordType>));
+            new_page.write(data_file);
 
             data_page.next = insertion_position;
             data_file.seekp(previous_data_page_position);
-            data_file.write((char *) &data_page, SIZE(DataPage<RecordType>));
+            data_page.write(data_file);
         }
         CLOSE_FILES; //< closes the files
     }

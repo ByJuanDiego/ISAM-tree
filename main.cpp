@@ -7,7 +7,8 @@ int main() {
         return record.code;
     };
 
-    ISAM<true, char[5], Record, TYPE(index)> isam;
-    std::cout << "Hello, World!" << std::endl;
-    return 0;
+    ISAM<true, char[5], Record, TYPE(index)> isam("./database/data.dat");
+    std::cout << N<Record> << " " << M<char[5]> << std::endl;
+
+    return EXIT_SUCCESS;
 }
