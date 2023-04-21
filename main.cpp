@@ -7,7 +7,7 @@ int main() {
         return record.code;
     };
 
-    ISAM<char[5], Record, TYPE(index)> isam;
+    ISAM<true, char[5], Record, TYPE(index)> isam;
     std::cout << "Hello, World!" << std::endl;
     return 0;
 }
