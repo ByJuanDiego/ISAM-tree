@@ -14,10 +14,12 @@
 #include <cmath>
 
 
-#define BUFFER_SIZE 256
-#define SIZE(type) sizeof(type)
-#define TYPE(type) decltype(type)
+#define BUFFER_SIZE 128
+#define SIZE(T) sizeof(T)
+#define TYPE(T) decltype(T)
 #define null (-1)
+
+#define INT_POW(BASE, EXP) (static_cast<int>(std::pow(BASE, EXP)))
 
 #define OPEN_FILES \
 index_file1.open(index_file_name(1), flags); \
@@ -50,6 +52,10 @@ struct IndexPage {
 
     void read(std::fstream &file) {
         file.read((char *) this, SIZE(IndexPage<KeyType>));
+    }
+
+    void write(std::fstream &file) {
+        file.write((char *) this, SIZE(IndexPage<KeyType>));
     }
 
     long locate(KeyType key) {
@@ -126,31 +132,37 @@ private:
         return index3.locate(key);                    //< searches the physical pointer to descend to a leaf page
     }
 
-    void build_data_pages(std::ifstream &sorted_file, int data_pages) {
+    void init_data_pages(std::ifstream &sorted_file, int data_pages) {
         data_file.open(data_file_name, std::ios::app);
 
         for (int i = 0; i < data_pages; ++i) {
             DataPage<RecordType> ram_page;
-            RecordType record;
 
-            while ((ram_page.n_records < N<RecordType>)) {
-                if ((sorted_file >> record)) {
-                    ram_page.records[ram_page.n_records++] = record;
-                    continue;
-                }
-                if (ram_page.n_records == 0) {
-                    data_file.close();
-                    return;
-                }
+            for (int j = 0; j < N<RecordType>; ++j) {
+                RecordType record;
+                sorted_file >> record;
+                ram_page.records[j] = record;
             }
-            data_file.write((char *) &ram_page, SIZE(DataPage<RecordType>));
+
+            ram_page.n_records = N<RecordType>;
+            ram_page.write(data_file);
         }
 
         data_file.close();
     }
 
-    void build_index_pages(int number_of_index_pages) {
-        // TODO
+    void build_index_pages(int level, int max_n_children) {
+        std::string index_name = index_file_name(level);
+        std::fstream index_file(index_name, std::ios::app);
+        int number_of_pages = INT_POW(max_n_children, level);
+
+        for (int i = 0; i < number_of_pages; ++i) {
+            IndexPage<KeyType> ram_page;
+            ram_page.n_keys = max_n_children - 1;
+            ram_page.write(number_of_pages);
+        }
+
+        index_file.close();
     }
 
 public:
@@ -163,7 +175,9 @@ public:
     ISAM() = default;
 
     /******************************************************************************************************************/
-    /* This member function must be called once, since it initializes the tree structure levels, which are static.    */
+    /* This member function meets the following requirements                                                         */
+    /*   • It must be called once, since it initializes the tree structure levels, which are static.                  */
+    /*   • It assumes that the `sorted_file` has exactly N * (M+1)^3 records, in order to generate a full ISAM-tree   */
     /******************************************************************************************************************/
     void build_static_tree(const std::string &sorted_file_name) {
         std::ifstream sorted_file(sorted_file_name, std::ios::in | std::ios::binary);
@@ -171,21 +185,23 @@ public:
             throw std::runtime_error("Cannot open the file: " + std::string(sorted_file_name));
         }
 
-        sorted_file.seekg(std::ios::end);
-        long n_bytes = sorted_file.tellg();
-        long n_records = n_bytes / SIZE(RecordType); //< Calculates the number of records in `sorted_file`
-        long n_record_pages = std::ceil(double(n_records) / N<RecordType>); //< Calculates the number of data pages
+        int max_n_children = M<KeyType> + 1;      //< Maximum number of children per index page
+        int max_n_records = N<RecordType>;        //< Maximum number of records per data page
 
-        build_data_pages(sorted_file, n_record_pages); //< In charge of build the data pages @ `data_file`
+        int n_records = INT_POW(max_n_children, 3) * max_n_records; //< Total number of records in full ISAM-tree
 
-        int r1 = std::ceil(double(n_record_pages) / (M<KeyType> + 1)); //< first (base) level number of index pages
-        int r2 = std::ceil(double(r1) / (M<KeyType> + 1));             //< second (mid) level n...
-        int r3 = std::ceil(double(r2) / (M<KeyType> + 1));             //< third  (top) level n...
+        // First, creates all the data pages with all the records and appends them to `data_file`
+        init_data_pages(sorted_file, n_records);
 
-        build_index_pages(r1);
-        build_index_pages(r2);
-        build_index_pages(r3);
+        // Then, creates the index pages for each level (without keys)
+        build_index_pages(3, max_n_children);
+        build_index_pages(2, max_n_children);
+        build_index_pages(1, max_n_children);
 
+        // Finally, fills the index levels nodes with his correspondents keys of from down to up
+        // TODO init_level3_pages();
+        // TODO init_level2_pages();
+        // TODO init_level1_pages();
         // If everything worked correctly, at this point a functional ISAM was initialized successfully
     }
 
