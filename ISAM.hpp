@@ -21,11 +21,11 @@
 
 #define INT_POW(BASE, EXP) (static_cast<int>(std::pow(BASE, EXP)))
 
-#define OPEN_FILES \
-index_file1.open(index_file_name(1), flags); \
-index_file2.open(index_file_name(2), flags); \
-index_file3.open(index_file_name(3), flags); \
-data_file.open(data_file_name, flags)
+#define OPEN_FILES(MODE) \
+index_file1.open(index_file_name(1), MODE); \
+index_file2.open(index_file_name(2), MODE); \
+index_file3.open(index_file_name(3), MODE); \
+data_file.open(data_file_name, MODE)
 
 #define CLOSE_FILES \
 index_file1.close(); \
@@ -47,7 +47,7 @@ inline static constexpr int M = (BUFFER_SIZE - SIZE(int) - SIZE(long)) / (SIZE(l
 template<typename KeyType>
 struct IndexPage {
     int n_keys{0};                      //< number of keys in the index page
-    KeyType keys[M<KeyType>];           //< keys array
+    KeyType keys[M<KeyType>]{};           //< keys array
     long children[M<KeyType> + 1]{};    //< children physical position array
 
     void read(std::fstream &file) {
@@ -73,7 +73,7 @@ inline static constexpr int N = (BUFFER_SIZE - SIZE(long) - SIZE(int)) / SIZE(Re
 
 template<typename RecordType>
 struct DataPage {
-    RecordType records[N<RecordType>];
+    RecordType records[N<RecordType>] {};
     long next{-1};
     int n_records{0};
 
@@ -132,8 +132,11 @@ private:
         return index3.locate(key);                    //< searches the physical pointer to descend to a leaf page
     }
 
-    void init_data_pages(std::ifstream &sorted_file, int data_pages) {
+    void init_data_pages(std::ifstream &sorted_file, int data_pages,
+                         std::vector<KeyType> &l3_keys, std::vector<KeyType> &l2_keys, std::vector<KeyType> &l1_keys
+    ) {
         data_file.open(data_file_name, std::ios::app);
+        int l3 = 0, l2 = 0;
 
         for (int i = 0; i < data_pages; ++i) {
             DataPage<RecordType> ram_page;
@@ -146,28 +149,58 @@ private:
 
             ram_page.n_records = N<RecordType>;
             ram_page.write(data_file);
+
+            /* This part of the code stores the key of the first record of each data page in vectors in order to      */
+            /* assign the keys in each index level later in the process if ISAM-tree initialization.                  */
+            KeyType key;
+            char xd[5] = "P110";
+            std::memcpy(key, "P110", SIZE(KeyType));
+
+            if (i == 0) {//< Skips the first data page (not belongs to any key level)
+                continue;
+            }
+
+            if (l3 < N<RecordType>) {
+                l3_keys.push_back(key);
+                ++l3;
+            } else {
+                l3 = 0;
+                if (l2 < N<RecordType>) {
+                    l2_keys.push_back(key);
+                    ++l2;
+                } else {
+                    l2 = 0;
+                    l1_keys.push_back(key);
+                }
+            }
         }
 
         data_file.close();
     }
 
-    void build_index_pages(int level, int max_n_children) {
-        std::string index_name = index_file_name(level);
-        std::fstream index_file(index_name, std::ios::app);
-        int number_of_pages = INT_POW(max_n_children, level);
+    void init_index_pages(std::fstream &index_file, int level, int M, std::vector<KeyType> &keys) {
+        int number_of_pages = INT_POW(M + 1, level) * M;
+        long data_pointed_size = (level != 2) ? SIZE(IndexPage<KeyType>) : SIZE(DataPage<RecordType>);
+        long children = 0;
 
         for (int i = 0; i < number_of_pages; ++i) {
             IndexPage<KeyType> ram_page;
-            ram_page.n_keys = max_n_children - 1;
-            ram_page.write(number_of_pages);
-        }
 
-        index_file.close();
+            int j = 0;
+            for (; j < M; ++j) {
+                std::memcpy(ram_page.keys[j], keys.at(j), SIZE(KeyType));
+                ram_page.children[j] = data_pointed_size * (children++);
+            }
+            ram_page.children[j] = children * data_pointed_size;
+            ram_page.n_keys = M;
+
+            ram_page.write(index_file);
+        }
     }
 
 public:
 
-    explicit ISAM(std::string file_name) : data_file_name(std::move(file_name)) {
+    explicit ISAM(std::string file_name, Index index) : data_file_name(std::move(file_name)), index(index) {
         data_file.open(data_file_name, std::ios_base::app);
         data_file.close();
     }
@@ -193,7 +226,9 @@ public:
         std::vector<KeyType> second_level_keys(INT_POW(max_n_children, 1) * M<KeyType>);
         std::vector<KeyType> third_level_keys(INT_POW(max_n_children, 2) * M<KeyType>);
 
-        // First, creates all the data pages with all the records and appends them to `data_file`
+        OPEN_FILES(std::ios::app);
+        // First, creates all the data pages with all the records and appends them to `data_file`.
+        // Also, stores the information of the keys in each level in vectors.
         init_data_pages(sorted_file, n_records, first_level_keys, second_level_keys, third_level_keys);
         /* index1    (still empty)
          * index2    (still empty)
@@ -202,9 +237,9 @@ public:
          */
 
         // Then, creates the index pages for each level and fills them with his correspondents keys
-        build_index_pages(3, max_n_children, third_level_keys);
-        build_index_pages(2, max_n_children, second_level_keys);
-        build_index_pages(1, max_n_children, first_level_keys);
+        init_index_pages(index_file3, 2, M<KeyType>, third_level_keys);
+        init_index_pages(index_file2, 1, M<KeyType>, second_level_keys);
+        init_index_pages(index_file1, 0, M<KeyType>, first_level_keys);
         /* index1:                      [k_1          k_2           ...         k_{M-1}             k_M]
          *                             /               |            ...            |                    \
          * index2:           [x < k_1]          [k_1 <= x < k_2]    ...     [k_{M-2} <= x < k_{M-1}]    [x >= k_M]
@@ -213,6 +248,7 @@ public:
          *             /  \      ...    /  \  /  \    ...    /  \       /  \    ...    /  \        /  \     ...   /  \
          * data:      [*][*]     ...   [*][*][*][*]   ...   [*][*]     [*][*]   ...   [*][*]      [*][*]    ...  [*][*]
          */
+        CLOSE_FILES;
     }
 
     /******************************************************************************************************************/
@@ -224,7 +260,7 @@ public:
     /*   • If the selected insertion page is full, a data page split occurs.                                          */
     /******************************************************************************************************************/
     void insert(RecordType &record) {
-        OPEN_FILES; //< open the files
+        OPEN_FILES(flags); //< open the files
 
         // locates the physical position of the data page where the new record should be inserted
         long data_page_position = this->locate(index(record));
@@ -282,7 +318,7 @@ public:
     std::vector<RecordType> search(KeyType key) {
         // ⬇️ inits an empty `std::vector` and open the files
         std::vector<RecordType> records;
-        OPEN_FILES;
+        OPEN_FILES(flags);
 
         // locates the physical position of the data page where the record to be searched is
         long data_page_position = this->locate(key);
@@ -310,7 +346,7 @@ public:
 
     std::vector<RecordType> range_search(KeyType lower_bound, KeyType upper_bound) {
         std::vector<RecordType> records;
-        OPEN_FILES;
+        OPEN_FILES(flags);
 
         long data_page = this->locate(lower_bound);
         // TODO
