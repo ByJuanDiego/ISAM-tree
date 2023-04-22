@@ -185,24 +185,34 @@ public:
             throw std::runtime_error("Cannot open the file: " + std::string(sorted_file_name));
         }
 
-        int max_n_children = M<KeyType> + 1;      //< Maximum number of children per index page
-        int max_n_records = N<RecordType>;        //< Maximum number of records per data page
+        int max_n_children = M<KeyType> + 1;                        //< Maximum number of children per index page
+        int n_records = INT_POW(max_n_children, 3) * N<RecordType>; //< Total number of records in full ISAM-tree
 
-        int n_records = INT_POW(max_n_children, 3) * max_n_records; //< Total number of records in full ISAM-tree
+        // Reserves memory for the keys
+        std::vector<KeyType> first_level_keys(INT_POW(max_n_children, 0) * M<KeyType>);
+        std::vector<KeyType> second_level_keys(INT_POW(max_n_children, 1) * M<KeyType>);
+        std::vector<KeyType> third_level_keys(INT_POW(max_n_children, 2) * M<KeyType>);
 
         // First, creates all the data pages with all the records and appends them to `data_file`
-        init_data_pages(sorted_file, n_records);
+        init_data_pages(sorted_file, n_records, first_level_keys, second_level_keys, third_level_keys);
+        /* index1    (still empty)
+         * index2    (still empty)
+         * index3    (still empty)
+         * data_file [r_{1}, r_{2}, ..., r_{N-1}, r_{N}][*] ... [*][*]
+         */
 
-        // Then, creates the index pages for each level (without keys)
-        build_index_pages(3, max_n_children);
-        build_index_pages(2, max_n_children);
-        build_index_pages(1, max_n_children);
-
-        // Finally, fills the index levels nodes with his correspondents keys of from down to up
-        // TODO init_level3_pages();
-        // TODO init_level2_pages();
-        // TODO init_level1_pages();
-        // If everything worked correctly, at this point a functional ISAM was initialized successfully
+        // Then, creates the index pages for each level and fills them with his correspondents keys
+        build_index_pages(3, max_n_children, third_level_keys);
+        build_index_pages(2, max_n_children, second_level_keys);
+        build_index_pages(1, max_n_children, first_level_keys);
+        /* index1:                      [k_1          k_2           ...         k_{M-1}             k_M]
+         *                             /               |            ...            |                    \
+         * index2:           [x < k_1]          [k_1 <= x < k_2]    ...     [k_{M-2} <= x < k_{M-1}]    [x >= k_M]
+         *                 /     ...    \        /    ...    \      ...    /    ...    \               /    ...   \
+         * index3:      [.]      ...     [.]   [.]    ...     [.]   ...  [.]    ...     [.]         [.]     ...    [.]
+         *             /  \      ...    /  \  /  \    ...    /  \       /  \    ...    /  \        /  \     ...   /  \
+         * data:      [*][*]     ...   [*][*][*][*]   ...   [*][*]     [*][*]   ...   [*][*]      [*][*]    ...  [*][*]
+         */
     }
 
     /******************************************************************************************************************/
