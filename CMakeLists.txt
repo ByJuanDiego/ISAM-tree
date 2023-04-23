@@ -9,3 +9,4 @@ add_executable(read_sorted_file src/read_sorted_file.cpp inc/ISAM.hpp inc/record
 add_executable(isam_create_index src/isam_create_index.cpp inc/ISAM.hpp inc/record.hpp)
 add_executable(isam_search_record src/isam_search_record.cpp inc/ISAM.hpp inc/record.hpp)
 add_executable(isam_insert_record src/isam_insert_record.cpp inc/ISAM.hpp inc/record.hpp)
+add_executable(isam src/main.cpp inc/ISAM.hpp inc/record.hpp src/main.cpp)
