@@ -17,18 +17,18 @@ int main() {
     ISAM<true, char[5], Record, std::function<char *(Record &)>, std::function<bool(char[5], char[5])>> isam(
             "../database/data.dat", index, greater
     );
-//
-//    char code [5];
-//    std::cout << "Code to search: ";
-//    read_from_console(code, 5);
-//    std::cout << "Code -> " << code << std::endl;
-//    std::vector<Record> search = isam.search(code);
-//    if (!search.empty()) {
-//        std::cout << "Record found: " << search[0].to_string() << std::endl;
-//    } else {
-//        std::cout << "Record not found" << std::endl;
-//    }
-//
+
+    char code [5];
+    std::cout << "Code to search: ";
+    read_from_console(code, 5);
+    std::cout << "Code -> " << code << std::endl;
+    std::vector<Record> search = isam.search(code);
+    if (!search.empty()) {
+        std::cout << "Record found: " << search[0].to_string() << std::endl;
+    } else {
+        std::cout << "Record not found" << std::endl;
+    }
+
 //    std::ifstream data_file("../database/sorted_data.dat", std::ios::binary);
 //    Record record{};
 //

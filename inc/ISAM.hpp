@@ -285,7 +285,6 @@ public:
 
         // locates the physical position of the data page where the record to be searched is
         long seek = this->locate(key);
-        std::cout << "seek: " << seek << std::endl;
         DataPage<RecordType> page;
 
         do {
@@ -293,14 +292,12 @@ public:
             data_file.read((char *) &page, SIZE(DataPage<RecordType>));
             for (int i = 0; i < page.n_records; ++i) {  //< iterates the leaf records in the current page
                 if (!greater(index(page.records[i]), key) && !greater(key, index(page.records[i]))) {
-                    std::cout << index(page.records[i]) << " equals " << key << std::endl;
                     records.push_back(page.records[i]); //< if the `record.key` equals `key`, pushes to the `vector`
 
                     if (PrimaryKey) {// if indexing a primary-key, it breaks the loop (the unique record was found).
                         break;
                     }
                 }
-                std::cout << index(page.records[i]) << " not equals " << key << std::endl;
             }
             seek = page.next; //< `page.next` probably points to an overflow page (or to nothing)
         } while (seek != DISK_NULL);
@@ -333,7 +330,6 @@ public:
 
         // locates the physical position of the data page where the new record should be inserted
         long seek = this->locate(index(record));
-        std::cout << "seek: " << seek << std::endl;
         long non_full = DISK_NULL;
         long prev = DISK_NULL;
 
@@ -358,6 +354,7 @@ public:
             data_file.write((char *) &new_page, SIZE(DataPage<RecordType>));
             data_file.close();
 
+            data_file.open(data_file_name, flags);
             DataPage<RecordType> prev_page;
             data_file.seekg(prev);
             data_file.read((char *) &prev_page, SIZE(DataPage<RecordType>));
