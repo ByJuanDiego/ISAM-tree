@@ -17,5 +17,7 @@ int main() {
     std::cout << "Total of records read: " << count << std::endl;
     sorted_file.close();
 
+    std::cout << "N: " << N<Record> << ", M: " << M<char[5]> << std::endl;
+
     return EXIT_SUCCESS;
 }

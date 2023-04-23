@@ -1,8 +1,9 @@
+//
+// Created by juandiego on 4/23/23.
+//
+
 #include "../inc/ISAM.hpp"
 #include "../inc/record.hpp"
-
-/* This source file must be executed once, since it initialize the static tree of the ISAM in disk.                   */
-/* Executing it many times may result in an unexpected behaviour of the index.                                         */
 
 int main() {
     std::function<char *(Record &)> index = [](Record &record) -> char * {
@@ -16,7 +17,12 @@ int main() {
     ISAM<true, char[5], Record, std::function<char *(Record &)>, std::function<bool(char[5], char[5])>> isam(
             "../database/data.dat", index, greater
     );
-    isam.build_static_tree("../database/sorted_data.dat");
+
+    Record record {};
+    init(record);
+    isam.insert(record);
+
+
 
     return EXIT_SUCCESS;
 }

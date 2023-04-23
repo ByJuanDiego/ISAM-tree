@@ -14,10 +14,12 @@ int main() {
         return std::string(a) > std::string(b);
     };
 
-    ISAM<true, char[5], Record, std::function<char *(Record &)>, std::function<bool(char[5], char[5])>> isam("../database/data.dat", index, greater);
+    ISAM<true, char[5], Record, std::function<char *(Record &)>, std::function<bool(char[5], char[5])>> isam(
+            "../database/data.dat", index, greater
+    );
 
     std::ifstream data_file("../database/sorted_data.dat", std::ios::binary);
-    Record record {};
+    Record record{};
 
     while (data_file.read((char *) &record, SIZE(Record))) {
         std::cout << isam.search(record.code)[0].to_string() << std::endl;

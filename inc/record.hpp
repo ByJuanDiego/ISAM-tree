@@ -21,4 +21,26 @@ struct Record {
     }
 };
 
+void read_from_console(char buffer[], int size) {
+    std::string temp;
+    std::getline(std::cin >> std::ws, temp, '\n');
+    std::cin.clear();
+
+    for (int i = 0; i < (size - 1); ++i) {
+        buffer[i] = temp[i];
+    }
+
+    buffer[size - 1] = '\0';
+}
+
+void init(Record &record) {
+    std::cout << "----------- new record -----------" << std::endl;
+    std::cout << "code: ";
+    read_from_console(record.code, 5);
+    std::cout << "name: ";
+    read_from_console(record.name, 20);
+    std::cout << "cycle: ";
+    std::cin >> record.cycle;
+}
+
 #endif //RECORD_HPP
