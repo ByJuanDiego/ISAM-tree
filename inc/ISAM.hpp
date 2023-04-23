@@ -134,7 +134,7 @@ private:
             data_file.write((char *) &ram_page, SIZE(DataPage<RecordType>));
 
             /* This part of the code stores the key of the first record of each data page in vectors in order to      */
-            /* assign the keys in each index level later in the process if ISAM-tree initialization.                  */
+            /* assign the keys in each index level later in the process of ISAM-tree initialization.                  */
             auto key = index(ram_page.records[0]);
 
             if (i == 0) {//< Skips the first data page (not belongs to any key level)
@@ -248,9 +248,8 @@ public:
         auto *third_level_keys = new KeyType[INT_POW(max_n_children, 2) * M<KeyType>];
 
         // First, creates all the data pages with all the records and appends them to `data_file`.
-        // Also, stores the information of the keys in each level in vectors.
+        // Also, stores the information of the keys in each level in arrays.
         init_data_pages(sorted_file, n_pages, first_level_keys, second_level_keys, third_level_keys);
-
         /* index1    (still empty)
          * index2    (still empty)
          * index3    (still empty)
