@@ -16,13 +16,8 @@ struct Record {
 
     std::string to_string() {
         std::stringstream ss;
-        ss << "(" << name << ", " << code << ", " << cycle << ")";
+        ss << "(" << code << ", " << name << ", " << cycle << ")";
         return ss.str();
-    }
-
-    friend std::ifstream &operator>>(std::ifstream &in, Record &record) {
-        in.read((char* ) &record, sizeof(Record));
-        return in;
     }
 };
 
