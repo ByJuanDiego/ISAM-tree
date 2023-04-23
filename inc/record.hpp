@@ -5,6 +5,7 @@
 #ifndef RECORD_HPP
 #define RECORD_HPP
 
+#include <cmath>
 #include <string>
 #include <sstream>
 #include <fstream>
@@ -26,7 +27,8 @@ void read_from_console(char buffer[], int size) {
     std::getline(std::cin >> std::ws, temp, '\n');
     std::cin.clear();
 
-    for (int i = 0; i < (size - 1); ++i) {
+    int sz = std::min((int) temp.length(), size);
+    for (int i = 0; i < sz; ++i) {
         buffer[i] = temp[i];
     }
 

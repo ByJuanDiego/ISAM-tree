@@ -18,6 +18,6 @@ int main() {
     sorted_file.close();
 
     std::cout << "N: " << N<Record> << ", M: " << M<char[5]> << std::endl;
-
+    std::cout << "DataPageSize: " << SIZE(DataPage<Record>) << " IndexPageSize: " << SIZE(IndexPage<char[5]>);
     return EXIT_SUCCESS;
 }

@@ -20,9 +20,7 @@ int main() {
 
     Record record {};
     init(record);
+    std::cout << "record: " << record.to_string() << std::endl;
     isam.insert(record);
-
-
-
     return EXIT_SUCCESS;
 }
