@@ -311,7 +311,43 @@ public:
         std::vector<RecordType> records;
         OPEN_FILES(flags);
 
-        //TODO
+        // locates the physical position of the data page where the `lower_bound` is located
+        long seek_page = this->locate(lower_bound);
+        long n_static_pages = INT_POW(M<KeyType> + 1, 3);
+        DataPage<RecordType> page;
+        bool any_found;
+
+        do {
+            any_found = false;
+            data_file.seekg(seek_page);
+            data_file.read((char *) &page, SIZE(DataPage<RecordType>));
+
+            for (int i = 0; i < page.n_records; ++i) {
+                if (greater(index(page.records[i]), lower_bound) &&
+                    greater(upper_bound, index(page.records[i]))) {
+                    records.push_back(page.records[i]);
+                    any_found = true;
+                }
+            }
+
+            DataPage<RecordType> overflow;
+            long seek_overflow = page.next;
+            while (seek_overflow != DISK_NULL) {
+                data_file.seekg(seek_overflow);
+                data_file.read((char *) &overflow, SIZE(DataPage<RecordType>));
+
+                for (int j = 0; j < overflow.n_records; ++j) {
+                    if (greater(index(overflow.records[j]), lower_bound) &&
+                        greater(upper_bound, index(overflow.records[j]))) {
+                        records.push_back(overflow.records[j]);
+                        any_found = true;
+                    }
+                }
+                seek_overflow = overflow.next;
+            }
+
+            seek_page += SIZE(DataPage<RecordType>);
+        } while (any_found && (seek_page != n_static_pages * SIZE(DataPage<RecordType>)));
 
         CLOSE_FILES;
         return records;
