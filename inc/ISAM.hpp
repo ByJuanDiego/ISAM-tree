@@ -323,8 +323,8 @@ public:
             data_file.read((char *) &page, SIZE(DataPage<RecordType>));
 
             for (int i = 0; i < page.n_records; ++i) {
-                if (greater(index(page.records[i]), lower_bound) &&
-                    greater(upper_bound, index(page.records[i]))) {
+                if (!greater(lower_bound, index(page.records[i])) &&
+                    !greater(index(page.records[i]), upper_bound)) {
                     records.push_back(page.records[i]);
                     any_found = true;
                 }
@@ -337,8 +337,8 @@ public:
                 data_file.read((char *) &overflow, SIZE(DataPage<RecordType>));
 
                 for (int j = 0; j < overflow.n_records; ++j) {
-                    if (greater(index(overflow.records[j]), lower_bound) &&
-                        greater(upper_bound, index(overflow.records[j]))) {
+                    if (!greater(lower_bound, index(page.records[j])) &&
+                        !greater(index(page.records[j]), upper_bound)) {
                         records.push_back(overflow.records[j]);
                         any_found = true;
                     }
