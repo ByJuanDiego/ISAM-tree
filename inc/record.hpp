@@ -10,6 +10,8 @@
 #include <sstream>
 #include <fstream>
 
+#include "utils.hpp"
+
 struct Record {
     char name[20];
     char code[5];
@@ -22,25 +24,12 @@ struct Record {
     }
 };
 
-void read_from_console(char buffer[], int size) {
-    std::string temp;
-    std::getline(std::cin >> std::ws, temp, '\n');
-    std::cin.clear();
-
-    int sz = std::min((int) temp.length(), size);
-    for (int i = 0; i < sz; ++i) {
-        buffer[i] = temp[i];
-    }
-
-    buffer[size - 1] = '\0';
-}
-
 void init(Record &record) {
     std::cout << "----------- new record -----------" << std::endl;
     std::cout << "code: ";
-    read_from_console(record.code, 5);
+    func::read_buffer(record.code, 5);
     std::cout << "name: ";
-    read_from_console(record.name, 20);
+    func::read_buffer(record.name, 20);
     std::cout << "cycle: ";
     std::cin >> record.cycle;
 }

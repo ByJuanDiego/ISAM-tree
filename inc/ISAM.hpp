@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "utils.hpp"
 
 #define BUFFER_SIZE 128
 #define SIZE(T) sizeof(T)
@@ -142,16 +143,16 @@ private:
             }
 
             if (l3 < M<KeyType>) {
-                std::memcpy(l3_keys[k++], key, SIZE(KeyType));
+                func::copy(l3_keys[k++], key);
                 ++l3;
             } else {
                 l3 = 0;
                 if (l2 < M<KeyType>) {
-                    std::memcpy(l2_keys[m++], key, SIZE(KeyType));
+                    func::copy(l2_keys[m++], key);
                     ++l2;
                 } else {
                     l2 = 0;
-                    std::memcpy(l1_keys[n++], key, SIZE(KeyType));
+                    func::copy(l1_keys[n++], key);
                 }
             }
         }
@@ -168,7 +169,7 @@ private:
 
             int j = 0;
             for (; j < M; ++j) {
-                std::memcpy(ram_page.keys[j], keys[k++], SIZE(KeyType));
+                func::copy(ram_page.keys[j], keys[k++]);
                 ram_page.children[j] = ((children++) * pointed_data_size);
             }
 

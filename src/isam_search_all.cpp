@@ -1,6 +1,7 @@
 //
-// Created by juandiego on 4/22/23.
+// Created by juandiego on 4/23/23.
 //
+
 
 #include "../inc/ISAM.hpp"
 #include "../inc/record.hpp"
@@ -18,16 +19,13 @@ int main() {
             "../database/data.dat", index, greater
     );
 
-    char code[5];
-    std::cout << "Code to search: ";
-    func::read_buffer(code, 5);
-    std::cout << "Code -> " << code << std::endl;
-    std::vector<Record> search = isam.search(code);
-    if (!search.empty()) {
-        std::cout << "Record found: " << search[0].to_string() << std::endl;
-    } else {
-        std::cout << "Record not found" << std::endl;
+    std::ifstream data_file("../database/sorted_data.dat", std::ios::binary);
+    Record record{};
+
+    while (data_file.read((char *) &record, SIZE(Record))) {
+        std::cout << isam.search(record.code)[0].to_string() << std::endl;
     }
+    data_file.close();
 
     return EXIT_SUCCESS;
 }
