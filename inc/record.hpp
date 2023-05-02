@@ -12,26 +12,31 @@
 
 #include "utils.hpp"
 
-struct Record {
-    char name[20];
-    char code[5];
-    int cycle;
+#include <string>
+#include <sstream>
+
+struct MovieRecord {
+    int dataId{};
+    char contentType[16]{'\0'};
+    char title[256]{'\0'};
+    short length{};
+    short releaseYear{};
+    short endYear{};
+    int votes{};
+    float rating{};
+    int gross{};
+    char certificate[16]{'\0'};
+    char description[512]{'\0'};
+    bool removed{};
 
     std::string to_string() {
         std::stringstream ss;
-        ss << "(" << code << ", " << name << ", " << cycle << ")";
+        ss << "("
+           << dataId << ", " << contentType << ", " << title << ", " << length << ", " << releaseYear << ", "
+           << endYear << ", " << votes << ", " << rating << ", " << gross << ", " << certificate
+           << ", " << std::boolalpha << removed << ")";
         return ss.str();
     }
 };
-
-void init(Record &record) {
-    std::cout << "----------- new record -----------" << std::endl;
-    std::cout << "code: ";
-    func::read_buffer(record.code, 5);
-    std::cout << "name: ";
-    func::read_buffer(record.name, 20);
-    std::cout << "cycle: ";
-    std::cin >> record.cycle;
-}
 
 #endif //RECORD_HPP

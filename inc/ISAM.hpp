@@ -1,24 +1,11 @@
 //
-// Created by juandiego on 4/18/23.
+// Created by juandiego on 5/1/23.
 //
 
-#ifndef ISAM_HPP
-#define ISAM_HPP
+#ifndef PROJECT_DATASET_ISAM_HPP
+#define PROJECT_DATASET_ISAM_HPP
 
-#include <cmath>
-#include <cstring>
-#include <fstream>
-#include <functional>
-#include <iostream>
-#include <sstream>
-#include <string>
-#include <vector>
-
-#include "utils.hpp"
-
-#define BUFFER_SIZE 128
-#define SIZE(T) sizeof(T)
-#define DISK_NULL (-1)
+#include "pages.hpp"
 
 #define INT_POW(BASE, EXP) (static_cast<int>(std::pow(BASE, EXP)))
 
@@ -34,61 +21,26 @@
     index_file3.close(); \
     data_file.close()
 
-
-/* `M` stores the number of keys in an index page
-*
-* BUFFER = (M * key) + (M + 1) * long + int
-* BUFFER = (M * key) + (M * long) + long + int
-* BUFFER = M * (key + long) + long_size + int
-* BUFFER - long - int = M * (key + long)
-* M = (BUFFER - long - int) / (key + long) */
-template<typename KeyType>
-inline static constexpr int M = (BUFFER_SIZE - SIZE(int) - SIZE(long)) / (SIZE(long) + SIZE(KeyType));
-
-template<typename KeyType>
-struct IndexPage {
-    int n_keys{0};                  //< number of keys in the index page
-    KeyType keys[M<KeyType>]{};     //< keys array
-    long children[M<KeyType> + 1]{};//< children physical position array
-
-    long locate(KeyType key, std::function<bool(KeyType, KeyType)> greater) {
-        int i = 0;
-        for (; ((i < n_keys) && !greater(keys[i], key)); ++i);
-        return children[i];
-    }
-};
-
-
-//`N` stores the maximum number of records per data page
-// It is calculated with the same logic as with `M`.
-template<typename RecordType>
-inline static constexpr int N = (BUFFER_SIZE - SIZE(long) - SIZE(int)) / SIZE(RecordType);
-
-template<typename RecordType>
-struct DataPage {
-    RecordType records[N<RecordType>]{};
-    long next{-1};
-    int n_records{0};
-
-    explicit DataPage() = default;
-};
-
-template<bool PrimaryKey, typename KeyType, typename RecordType, typename Index, typename Greater>
+template<bool PrimaryKey,
+        typename KeyType,
+        typename RecordType,
+        typename Index = std::function<KeyType(RecordType &)>,
+        typename Greater = std::greater<KeyType>>
 class ISAM {
 private:
     /* Three levels of index files that stores index pages */
     std::fstream index_file1;
     std::fstream index_file2;
     std::fstream index_file3;
-    std::function<std::string(int)> index_file_name = [](int i, const std::string &relative_path = "../database") {
+    std::function<std::string(int)> index_file_name = [](int i, const std::string &relative_path = "./database") {
         return relative_path + "/index" + std::to_string(i) + ".dat";
     };//< Gets the name of the ith index file
 
     /* Data pages are stored @ the last level */
     std::fstream data_file;
-    std::string data_file_name; //< The name of the data file
+    std::string data_file_name; //< The name of the database file
 
-    std::_Ios_Openmode flags = std::ios_base::in | std::ios_base::out | std::ios_base::binary;  //< Open mode flags
+    std::ios::openmode flags = std::ios_base::in | std::ios_base::out | std::ios_base::binary;  //< Open mode flags
 
     Index index;        //< Receives a `RecordType` and returns its `KeyType` associated
     Greater greater;    //< Receives two `RecordTypes` and returns `true` if a.key > b.key and `false` otherwise
@@ -117,98 +69,101 @@ private:
         return page_position;
     }
 
-    void init_data_pages(std::ifstream &sorted_file, int data_pages,
-                         KeyType *l1_keys, KeyType *l2_keys, KeyType *l3_keys) {
-        int l3 = 0, l2 = 0;
-        int k = 0, m = 0, n = 0;
+    void init_data_pages(std::vector<std::pair<RecordType, long>> &sorted_records, int n_pages) {
+        int l3 = 0, l2 = 0, l1 = 0;
+        int k3 = 0, k2 = 0, k1 = 0;
 
-        for (int i = 0; i < data_pages; ++i) {
-            DataPage<RecordType> ram_page;
+        IndexPage<KeyType> level3_index_page;
+        IndexPage<KeyType> level2_index_page;
+        IndexPage<KeyType> level1_index_page;
 
-            for (int j = 0; j < N<RecordType>; ++j) {
-                RecordType record;
-                sorted_file.read((char *) &record, sizeof(RecordType));
-                ram_page.records[j] = record;
+        for (int i = 0; i < n_pages; ++i) {
+            DataPage<Pair<KeyType>> data_page;
+            for (int j = 0; j < N<Pair<KeyType>>; ++j) {
+                std::pair<RecordType, long> pair = sorted_records[(i * N<Pair<KeyType>>) + j];
+                data_page.records[j] = Pair<KeyType>(index(pair.first), pair.second);
             }
+            data_page.n_records = N<Pair<KeyType>>;
+            data_file.write((char *) &data_page, SIZE(DataPage<Pair<KeyType>>));
 
-            ram_page.n_records = N<RecordType>;
-            data_file.write((char *) &ram_page, SIZE(DataPage<RecordType>));
-
-            /* This part of the code stores the key of the first record of each data page in vectors in order to      */
+            /* This part of the code stores the key of the first record of each database page in vectors in order to  */
             /* assign the keys in each index level later in the process of ISAM-tree initialization.                  */
-            auto key = index(ram_page.records[0]);
 
-            if (i == 0) {//< Skips the first data page (not belongs to any key level)
+            if (i == 0) {//< Skips the first database page (not belongs to any key level)
                 continue;
             }
 
+            auto key = data_page.records[0].key;
+
             if (l3 < M<KeyType>) {
-                func::copy(l3_keys[k++], key);
+                func::copy(level3_index_page.keys[l3], key);
+                level3_index_page.children[l3] = (k3++) * SIZE(DataPage<Pair<KeyType>>);
                 ++l3;
             } else {
+                level3_index_page.children[l3] = (k3++) * SIZE(IndexPage<KeyType>);
+                level3_index_page.n_keys = M<KeyType>;
+                index_file3.write((char *) &level3_index_page, SIZE(IndexPage<KeyType>));
                 l3 = 0;
+
                 if (l2 < M<KeyType>) {
-                    func::copy(l2_keys[m++], key);
+                    func::copy(level2_index_page.keys[l2], key);
+                    level2_index_page.children[l2] = (k2++) * SIZE(IndexPage<KeyType>);
                     ++l2;
                 } else {
+                    level2_index_page.children[l2] = (k2++) * SIZE(IndexPage<KeyType>);
+                    level2_index_page.n_keys = M<KeyType>;
+                    index_file2.write((char *) &level2_index_page, SIZE(IndexPage<KeyType>));
                     l2 = 0;
-                    func::copy(l1_keys[n++], key);
+
+                    func::copy(level1_index_page.keys[l1], key);
+                    level1_index_page.children[l1] = (k1++) * SIZE(IndexPage<KeyType>);
+                    ++l1;
                 }
             }
         }
+
+        level3_index_page.children[l3] = k3 * SIZE(DataPage<Pair<KeyType>>);
+        level3_index_page.n_keys = M<KeyType>;
+        index_file3.write((char *) &level3_index_page, SIZE(IndexPage<KeyType>));
+
+        level2_index_page.children[l1] = k2 * SIZE(IndexPage<KeyType>);
+        level2_index_page.n_keys = M<KeyType>;
+        index_file2.write((char *) &level2_index_page, SIZE(IndexPage<KeyType>));
+
+        level1_index_page.children[l1] = k1 * SIZE(IndexPage<KeyType>);
+        level1_index_page.n_keys = M<KeyType>;
+
+        index_file1.write((char *) &level1_index_page, SIZE(IndexPage<KeyType>));
     }
 
-    void init_index_pages(std::fstream &index_file, int level, int M, KeyType *keys) {
-        int number_of_pages = INT_POW((M + 1), level);
-        long pointed_data_size = (level != 2) ? SIZE(IndexPage<KeyType>) : SIZE(DataPage<RecordType>);
-        long children = 0;
-        int k = 0;
-
-        for (int i = 0; i < number_of_pages; ++i) {
-            IndexPage<KeyType> ram_page;
-
-            int j = 0;
-            for (; j < M; ++j) {
-                func::copy(ram_page.keys[j], keys[k++]);
-                ram_page.children[j] = ((children++) * pointed_data_size);
-            }
-
-            ram_page.n_keys = M;
-            ram_page.children[j] = (children++) * pointed_data_size;
-            index_file.write((char *) &ram_page, SIZE(IndexPage<KeyType>));
-        }
-    }
-
-
-    void locate_insertion_pk(long seek, RecordType &record, long &non_full, long &prev) {
-        DataPage<RecordType> page;
+    void locate_insertion_pk(long seek, KeyType key, long &non_full, long &prev) {
+        DataPage<Pair<KeyType>> page;
 
         do {
             data_file.seekg(seek);
-            data_file.read((char *) &page, SIZE(DataPage<RecordType>));
+            data_file.read((char *) &page, SIZE(DataPage<Pair<KeyType>>));
 
             for (int i = 0; i < page.n_records; ++i) {
-                if (!greater(index(page.records[i]), index(record)) &&
-                    !greater(index(record), index(page.records[i]))) {
+                if (!greater(page.records[i].key, key) && !greater(key, page.records[i].key)) {
                     CLOSE_FILES;
                     throw std::invalid_argument("Error: ISAM cannot insert a repeated primary key.");
                 }
             }
 
-            non_full = (page.n_records < N<RecordType> && non_full == DISK_NULL) ? seek : non_full;
+            non_full = (page.n_records < N<Pair<KeyType>> && non_full == DISK_NULL) ? seek : non_full;
             prev = seek;
             seek = page.next;
         } while (seek != DISK_NULL);
     }
 
     void locate_insertion_non_pk(long seek, long &non_full, long &prev) {
-        DataPage<RecordType> page;
+        DataPage<Pair<KeyType>> page;
 
         do {
             data_file.seekg(seek);
-            data_file.read((char *) &page, SIZE(DataPage<RecordType>));
+            data_file.read((char *) &page, SIZE(DataPage<Pair<KeyType>>));
 
-            if (page.n_records < N<RecordType>) {
+            if (page.n_records < N<Pair<KeyType>>) {
                 non_full = seek;
                 return;
             }
@@ -219,10 +174,9 @@ private:
     }
 
 public:
-    explicit ISAM(std::string file_name, Index index, Greater greater)
-            : data_file_name(std::move(file_name)), index(index),
-              greater(greater) {
-        data_file.open(data_file_name, std::ios_base::app);
+    explicit ISAM(std::string file_name, Index index, Greater greater = Greater())
+            : data_file_name(std::move(file_name)), index(index), greater(greater) {
+        data_file.open(data_file_name, std::ios::app);
         data_file.close();
     }
 
@@ -233,67 +187,103 @@ public:
     /*   • It must be called once, since it initializes the tree structure levels, which are static.                  */
     /*   • It assumes that the `sorted_file` has exactly N * (M+1)^3 records, in order to generate a full ISAM-tree   */
     /******************************************************************************************************************/
-    void build_static_tree(const std::string &sorted_file_name) {
-        std::ifstream sorted_file(sorted_file_name, std::ios::binary);
-        if (!sorted_file.is_open()) {
-            throw std::runtime_error("Cannot open the file: " + std::string(sorted_file_name));
+    void build_static_tree(const std::string &heap_file_name) {
+        std::fstream heap_file(heap_file_name, flags);
+        if (!heap_file.is_open()) {
+            throw std::runtime_error("Cannot open the file: " + heap_file_name);
         }
-        OPEN_FILES(std::ios::app);
+
+        SEEK_ALL_RELATIVE(heap_file, 0, std::ios::end)
+        long n_bytes = heap_file.tellg();
+        SEEK_ALL(heap_file, 0);
+
+        int n_total_records = n_bytes / SIZE(RecordType); // Total number of records in the heap file
 
         int max_n_children = M<KeyType> + 1;        //< Maximum number of children per index page
         int n_pages = INT_POW(max_n_children, 3);   //< Total number of record pages in full ISAM-tree
+        int n_records = N<Pair<KeyType>> * n_pages; //< Total number of records in full ISAM-tree
 
-        // Reserves memory for the keys
-        auto *first_level_keys = new KeyType[INT_POW(max_n_children, 0) * M<KeyType>];
-        auto *second_level_keys = new KeyType[INT_POW(max_n_children, 1) * M<KeyType>];
-        auto *third_level_keys = new KeyType[INT_POW(max_n_children, 2) * M<KeyType>];
+        if (n_total_records < n_records) {
+            throw std::runtime_error("The #N of records in " + heap_file_name + " are less than the minimum required.");
+        }
 
-        // First, creates all the data pages with all the records and appends them to `data_file`.
-        // Also, stores the information of the keys in each level in arrays.
-        init_data_pages(sorted_file, n_pages, first_level_keys, second_level_keys, third_level_keys);
-        /* index1    (still empty)
-         * index2    (still empty)
-         * index3    (still empty)
-         * data_file [r_{1}, r_{2}, ..., r_{N-1}, r_{N}][*] ... [*][*]
-         */
+        std::vector<std::pair<RecordType, long>> sorted_data;
+        sorted_data.reserve(n_records);
 
-        // Then, creates the index pages for each level and fills them with his correspondents keys
-        init_index_pages(index_file3, 2, M<KeyType>, third_level_keys);
-        init_index_pages(index_file2, 1, M<KeyType>, second_level_keys);
-        init_index_pages(index_file1, 0, M<KeyType>, first_level_keys);
+        long seek = 0;
+
+        for (int i = 0; i < n_records; ++i) {
+            RecordType record;
+            heap_file.read((char *) &record, SIZE(RecordType));
+            sorted_data.push_back(std::make_pair(record, seek));
+            seek = heap_file.tellg();
+        }
+
+        std::sort(sorted_data.begin(), sorted_data.end(),
+                  [&](std::pair<RecordType, long> &a, std::pair<RecordType, long> &b) {
+                      return !greater(index(a.first), index(b.first));
+                  });
+
+        OPEN_FILES(std::ios::app);
+
+        // Creates the index pages for each level and fills them with his correspondents keys
+        init_data_pages(sorted_data, n_pages);
         /* index1:                      [k_1          k_2           ...         k_{M-1}             k_M]
          *                             /               |            ...            |                    \
          * index2:           [x < k_1]          [k_1 <= x < k_2]    ...     [k_{M-2} <= x < k_{M-1}]    [x >= k_M]
          *                 /     ...    \        /    ...    \      ...    /    ...    \               /    ...   \
          * index3:      [.]      ...     [.]   [.]    ...     [.]   ...  [.]    ...     [.]         [.]     ...    [.]
          *             /  \      ...    /  \  /  \    ...    /  \       /  \    ...    /  \        /  \     ...   /  \
-         * data:      [*][*]     ...   [*][*][*][*]   ...   [*][*]     [*][*]   ...   [*][*]      [*][*]    ...  [*][*]
+         * database:  [*][*]     ...   [*][*][*][*]   ...   [*][*]     [*][*]   ...   [*][*]      [*][*]    ...  [*][*]
          */
+        CLOSE_FILES;
 
-        delete[] first_level_keys;
-        delete[] second_level_keys;
-        delete[] third_level_keys;
+        // Inserts the remaining records
+        RecordType record;
+        while (heap_file.read((char *) &record, SIZE(RecordType))) {
+            insert(index(record), seek);
+            seek = heap_file.tellg();
+        }
 
-        sorted_file.close();
+        /* index1:                      [k_1          k_2           ...         k_{M-1}             k_M]
+         *                             /               |            ...            |                    \
+         * index2:           [x < k_1]          [k_1 <= x < k_2]    ...     [k_{M-2} <= x < k_{M-1}]    [x >= k_M]
+         *                 /     ...    \        /    ...    \      ...    /    ...    \               /    ...   \
+         * index3:      [.]      ...     [.]   [.]    ...     [.]   ...  [.]    ...     [.]         [.]     ...    [.]
+         *             /  \      ...    /  \  /  \    ...    /  \       /  \    ...    /  \        /  \     ...   /  \
+         * database:  [*][*]     ...   [*][*][*][*]   ...   [*][*]     [*][*]   ...   [*][*]      [*][*]    ...  [*][*]
+         * overflow  ^[*][*]          ^[*][*]                         ^[*][*]                                   ^[*][*]
+         * pages:    ^[*][*]                                          ^[*][*]
+         */
+        heap_file.close();
         CLOSE_FILES;
     }
 
-    std::vector<RecordType> search(KeyType key) {
+    explicit operator bool() {
+        OPEN_FILES(std::ios::in);
+        SEEK_ALL_RELATIVE(index_file1, 0, std::ios::end)
+        long size = index_file1.tellg();
+        CLOSE_FILES;
+        return (size > 0);
+    }
+
+    std::vector<RecordType> search(KeyType key, const std::string &heap_file_name) {
         // ⬇️ inits an empty `std::vector` and open the files
-        std::vector<RecordType> records;
+        std::vector<long> pointers;
         OPEN_FILES(flags);
 
-        // locates the physical position of the data page where the record to be searched is
+        // locates the physical position of the database page where the record to be searched is
+
         long seek = this->locate(key);
-        DataPage<RecordType> page;
+        DataPage<Pair<KeyType>> page;
 
         do {
             data_file.seekg(seek);
-            data_file.read((char *) &page, SIZE(DataPage<RecordType>));
+            data_file.read((char *) &page, SIZE(DataPage<Pair<KeyType>>));
             for (int i = 0; i < page.n_records; ++i) {  //< iterates the leaf records in the current page
-                if (!greater(index(page.records[i]), key) && !greater(key, index(page.records[i]))) {
-                    records.push_back(page.records[i]); //< if the `record.key` equals `key`, pushes to the `vector`
-
+                if (!greater(page.records[i].key, key) && !greater(key, page.records[i].key)) {
+                    // if the `record.key` equals `key`, pushes to the `vector`
+                    pointers.push_back(page.records[i].data_pointer);
                     if (PrimaryKey) {// if indexing a primary-key, it breaks the loop (the unique record was found).
                         break;
                     }
@@ -302,6 +292,18 @@ public:
             seek = page.next; //< `page.next` probably points to an overflow page (or to nothing)
         } while (seek != DISK_NULL);
 
+        std::vector<RecordType> records;
+        records.reserve(pointers.size());
+        std::fstream heap_file(heap_file_name, std::ios::in | std::ios::binary);
+
+        for (long pointer: pointers) {
+            RecordType record;
+            heap_file.seekg(pointer);
+            heap_file.read((char *) &record, SIZE(RecordType));
+            records.push_back(record);
+        }
+
+        heap_file.close();
         CLOSE_FILES;
         return records;
         // ⬆️ closes each file and returns the result of the search.
@@ -311,7 +313,7 @@ public:
         std::vector<RecordType> records;
         OPEN_FILES(flags);
 
-        // locates the physical position of the data page where the `lower_bound` is located
+        // locates the physical position of the database page where the `lower_bound` is located
         long seek_page = this->locate(lower_bound);
         long n_static_pages = INT_POW(M<KeyType> + 1, 3);
         DataPage<RecordType> page;
@@ -359,48 +361,50 @@ public:
     /*                                                                                                                */
     /* In addition, by ISAM definition we have                                                                        */
     /*   • The three indexing levels are totally static, so the tree do not admit the split of indexing pages.        */
-    /*   • If the selected insertion page is full, a data page split occurs.                                          */
+    /*   • If the selected insertion page is full, a database page split occurs.                                          */
     /******************************************************************************************************************/
-    void insert(RecordType &record) {
+    void insert(KeyType key, long pointer) {
         OPEN_FILES(flags);//< open the files
 
-        // locates the physical position of the data page where the new record should be inserted
-        long seek = this->locate(index(record));
+        // locates the physical position of the database page where the new record should be inserted
+        long seek = this->locate(key);
+
         long non_full = DISK_NULL;
         long prev = DISK_NULL;
 
-        PrimaryKey ? locate_insertion_pk(seek, record, non_full, prev) : locate_insertion_non_pk(seek, non_full, prev);
+        PrimaryKey ? locate_insertion_pk(seek, key, non_full, prev) : locate_insertion_non_pk(seek, non_full, prev);
         //^ At the end of this call, `non_full` contains the physical position of the first DataPage
         //  found whose number of records does not exceed the maximum allowed (`N`)
         //  and `prev` contains the physical position of the last DataPage before DISK_NULL was found (if is required).
 
         if (non_full != DISK_NULL) {
-            DataPage<RecordType> non_full_page;
+            DataPage<Pair<KeyType>> non_full_page;
             data_file.seekg(non_full);
-            data_file.read((char *) &non_full_page, SIZE(DataPage<RecordType>));
-            non_full_page.records[non_full_page.n_records++] = record;
+            data_file.read((char *) &non_full_page, SIZE(DataPage<Pair<KeyType>>));
+            non_full_page.records[non_full_page.n_records++] = Pair<KeyType>(key, pointer);
             data_file.seekp(non_full);
-            data_file.write((char *) &non_full_page, SIZE(DataPage<RecordType>));
+            data_file.write((char *) &non_full_page, SIZE(DataPage<Pair<KeyType>>));
         } else {
             data_file.close();
             data_file.open(data_file_name, std::ios::app);
-            DataPage<RecordType> new_page;
-            new_page.records[new_page.n_records++] = record;
+            DataPage<Pair<KeyType>> new_page;
+            new_page.records[new_page.n_records++] = Pair<KeyType>(key, pointer);
             long pos = data_file.tellp();
-            data_file.write((char *) &new_page, SIZE(DataPage<RecordType>));
+            data_file.write((char *) &new_page, SIZE(DataPage<Pair<KeyType>>));
             data_file.close();
 
             data_file.open(data_file_name, flags);
-            DataPage<RecordType> prev_page;
+            DataPage<Pair<KeyType>> prev_page;
             data_file.seekg(prev);
-            data_file.read((char *) &prev_page, SIZE(DataPage<RecordType>));
+            data_file.read((char *) &prev_page, SIZE(DataPage<Pair<KeyType>>));
+
             prev_page.next = pos;
             data_file.seekp(prev);
-            data_file.write((char *) &prev_page, SIZE(DataPage<RecordType>));
+            data_file.write((char *) &prev_page, SIZE(DataPage<Pair<KeyType>>));
         }
 
         CLOSE_FILES;//< closes the files
     }
 };
 
-#endif//ISAM_HPP
+#endif //PROJECT_DATASET_ISAM_HPP
