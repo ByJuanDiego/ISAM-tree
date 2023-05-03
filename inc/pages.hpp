@@ -11,7 +11,7 @@
 
 #define DISK_NULL (-1)
 
-#define BUFFER_SIZE 210
+#define BUFFER_SIZE 239
 
 #define SEEK_ALL(file, pos) \
     file.seekg(pos);        \
@@ -59,7 +59,7 @@ struct DataPage {
 
 template<typename KeyType>
 struct Pair {
-    KeyType key;
+    KeyType key {KeyType()};
     long data_pointer;
 
     Pair() : data_pointer(DISK_NULL) {}

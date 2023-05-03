@@ -39,6 +39,7 @@ private:
     /* Data pages are stored @ the last level */
     std::fstream data_file;
     std::string data_file_name; //< The name of the database file
+    std::string heap_file_name;
 
     std::ios::openmode flags = std::ios_base::in | std::ios_base::out | std::ios_base::binary;  //< Open mode flags
 
@@ -100,7 +101,7 @@ private:
                 level3_index_page.children[l3] = (k3++) * SIZE(DataPage<Pair<KeyType>>);
                 ++l3;
             } else {
-                level3_index_page.children[l3] = (k3++) * SIZE(IndexPage<KeyType>);
+                level3_index_page.children[l3] = (k3++) * SIZE(DataPage<Pair<KeyType>>);
                 level3_index_page.n_keys = M<KeyType>;
                 index_file3.write((char *) &level3_index_page, SIZE(IndexPage<KeyType>));
                 l3 = 0;
@@ -132,7 +133,6 @@ private:
 
         level1_index_page.children[l1] = k1 * SIZE(IndexPage<KeyType>);
         level1_index_page.n_keys = M<KeyType>;
-
         index_file1.write((char *) &level1_index_page, SIZE(IndexPage<KeyType>));
     }
 
@@ -173,11 +173,83 @@ private:
         } while (seek != DISK_NULL);
     }
 
+    void search(KeyType key, std::vector<long> &pointers) {
+        // locates the physical position of the database page where the record to be searched is
+        long seek = this->locate(key);
+        DataPage<Pair<KeyType>> page;
+        do {
+            data_file.seekg(seek);
+            data_file.read((char *) &page, SIZE(DataPage<Pair<KeyType>>));
+            for (int i = 0; i < page.n_records; ++i) {  //< iterates the leaf records in the current page
+                if (!greater(page.records[i].key, key) && !greater(key, page.records[i].key)) {
+                    // if the `record.key` equals `key`, pushes to the `vector`
+                    pointers.push_back(page.records[i].data_pointer);
+                    if (PrimaryKey) {// if indexing a primary-key, it breaks the loop (the unique record was found).
+                        return;
+                    }
+                }
+            }
+            seek = page.next; //< `page.next` probably points to an overflow page (or to nothing)
+        } while (seek != DISK_NULL);
+    }
+
+    void range_search(KeyType lower_bound, KeyType upper_bound, std::vector<long> &pointers) {
+        // locates the physical position of the database page where the `lower_bound` is located
+        long seek = this->locate(lower_bound);
+        long n_static_pages = INT_POW(M<KeyType> + 1, 3);
+
+        DataPage<Pair<KeyType>> page;
+        bool any_found;
+
+        do {
+            any_found = false;
+            data_file.seekg(seek);
+            data_file.read((char *) &page, SIZE(DataPage<Pair<KeyType>>));
+
+            for (int i = 0; i < page.n_records; ++i) {
+                if (!greater(lower_bound, page.records[i].key) && !greater(page.records[i].key, upper_bound)) {
+                    pointers.push_back(page.records[i].data_pointer);
+                    any_found = true;
+                }
+            }
+
+            DataPage<Pair<KeyType>> overflow;
+            long seek_overflow = page.next;
+            while (seek_overflow != DISK_NULL) {
+                data_file.seekg(seek_overflow);
+                data_file.read((char *) &overflow, SIZE(DataPage<Pair<KeyType>>));
+
+                for (int j = 0; j < overflow.n_records; ++j) {
+                    if (!greater(lower_bound, overflow.records[j].key) && !greater(overflow.records[j].key, upper_bound)) {
+                        pointers.push_back(overflow.records[j].data_pointer);
+                        any_found = true;
+                    }
+                }
+                seek_overflow = overflow.next;
+            }
+
+            seek += SIZE(DataPage<Pair<KeyType>>);
+        } while (any_found && (seek != n_static_pages * SIZE(DataPage<Pair<KeyType>>)));
+    }
+
+    void search_records(std::vector<long> &pointers, std::vector<RecordType> &records) {
+        records.reserve(pointers.size());
+
+        std::fstream heap_file(heap_file_name, flags);
+        for (long pointer: pointers) {
+            RecordType record;
+            heap_file.seekg(pointer);
+            heap_file.read((char *) &record, SIZE(RecordType));
+            records.push_back(record);
+        }
+        heap_file.close();
+    }
+
 public:
-    explicit ISAM(std::string file_name, Index index, Greater greater = Greater())
-            : data_file_name(std::move(file_name)), index(index), greater(greater) {
-        data_file.open(data_file_name, std::ios::app);
-        data_file.close();
+
+    explicit ISAM(std::string heap_file_name, std::string file_name, Index index, Greater greater = Greater())
+            : heap_file_name(std::move(heap_file_name)), data_file_name(std::move(file_name)), index(index),
+              greater(greater) {
     }
 
     ISAM() = default;
@@ -187,7 +259,7 @@ public:
     /*   • It must be called once, since it initializes the tree structure levels, which are static.                  */
     /*   • It assumes that the `sorted_file` has exactly N * (M+1)^3 records, in order to generate a full ISAM-tree   */
     /******************************************************************************************************************/
-    void build_static_tree(const std::string &heap_file_name) {
+    void create_index() {
         std::fstream heap_file(heap_file_name, flags);
         if (!heap_file.is_open()) {
             throw std::runtime_error("Cannot open the file: " + heap_file_name);
@@ -267,91 +339,29 @@ public:
         return (size > 0);
     }
 
-    std::vector<RecordType> search(KeyType key, const std::string &heap_file_name) {
+    std::vector<RecordType> search(KeyType key) {
         // ⬇️ inits an empty `std::vector` and open the files
         std::vector<long> pointers;
+
         OPEN_FILES(flags);
-
-        // locates the physical position of the database page where the record to be searched is
-
-        long seek = this->locate(key);
-        DataPage<Pair<KeyType>> page;
-
-        do {
-            data_file.seekg(seek);
-            data_file.read((char *) &page, SIZE(DataPage<Pair<KeyType>>));
-            for (int i = 0; i < page.n_records; ++i) {  //< iterates the leaf records in the current page
-                if (!greater(page.records[i].key, key) && !greater(key, page.records[i].key)) {
-                    // if the `record.key` equals `key`, pushes to the `vector`
-                    pointers.push_back(page.records[i].data_pointer);
-                    if (PrimaryKey) {// if indexing a primary-key, it breaks the loop (the unique record was found).
-                        break;
-                    }
-                }
-            }
-            seek = page.next; //< `page.next` probably points to an overflow page (or to nothing)
-        } while (seek != DISK_NULL);
+        this->search(key, pointers);
+        CLOSE_FILES;
 
         std::vector<RecordType> records;
-        records.reserve(pointers.size());
-        std::fstream heap_file(heap_file_name, std::ios::in | std::ios::binary);
-
-        for (long pointer: pointers) {
-            RecordType record;
-            heap_file.seekg(pointer);
-            heap_file.read((char *) &record, SIZE(RecordType));
-            records.push_back(record);
-        }
-
-        heap_file.close();
-        CLOSE_FILES;
+        search_records(pointers, records);
         return records;
         // ⬆️ closes each file and returns the result of the search.
     }
 
     std::vector<RecordType> range_search(KeyType lower_bound, KeyType upper_bound) {
-        std::vector<RecordType> records;
+        std::vector<long> pointers;
+
         OPEN_FILES(flags);
-
-        // locates the physical position of the database page where the `lower_bound` is located
-        long seek_page = this->locate(lower_bound);
-        long n_static_pages = INT_POW(M<KeyType> + 1, 3);
-        DataPage<RecordType> page;
-        bool any_found;
-
-        do {
-            any_found = false;
-            data_file.seekg(seek_page);
-            data_file.read((char *) &page, SIZE(DataPage<RecordType>));
-
-            for (int i = 0; i < page.n_records; ++i) {
-                if (!greater(lower_bound, index(page.records[i])) &&
-                    !greater(index(page.records[i]), upper_bound)) {
-                    records.push_back(page.records[i]);
-                    any_found = true;
-                }
-            }
-
-            DataPage<RecordType> overflow;
-            long seek_overflow = page.next;
-            while (seek_overflow != DISK_NULL) {
-                data_file.seekg(seek_overflow);
-                data_file.read((char *) &overflow, SIZE(DataPage<RecordType>));
-
-                for (int j = 0; j < overflow.n_records; ++j) {
-                    if (!greater(lower_bound, index(page.records[j])) &&
-                        !greater(index(page.records[j]), upper_bound)) {
-                        records.push_back(overflow.records[j]);
-                        any_found = true;
-                    }
-                }
-                seek_overflow = overflow.next;
-            }
-
-            seek_page += SIZE(DataPage<RecordType>);
-        } while (any_found && (seek_page != n_static_pages * SIZE(DataPage<RecordType>)));
-
+        this->range_search(lower_bound, upper_bound, pointers);
         CLOSE_FILES;
+
+        std::vector<RecordType> records;
+        search_records(pointers, records);
         return records;
     }
 

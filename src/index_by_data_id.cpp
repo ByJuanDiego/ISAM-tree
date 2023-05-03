@@ -17,27 +17,54 @@ int main() {
     };
 
     ISAM<true, int, MovieRecord, std::function<int(MovieRecord &)>> isam(
-            "./database/isam_indexed_by_dataId.dat", index);
+            heap_file_name, "./database/isam_indexed_by_dataId.dat", index);
+
+//    std::cout << M<int> << " " << N<Pair<int>> << std::endl;
+//    std::cout << sizeof(IndexPage<int>) << std::endl;
+//    std::cout << sizeof(DataPage<Pair<int>>) << std::endl;
 
     func::clock clock;
     clock([&]() -> void {
               if (!isam) {
-                  isam.build_static_tree(heap_file_name);
+                  isam.create_index();
               } else {
                   std::cout << "isam tree already created" << std::endl;
               }
           }, "Build ISAM Tree"
     );
 
-    int dataId;
-    std::cout << "Enter the dataId: ";
-    std::cin >> dataId;
+//    size_t sz = 0;
+//    clock([&]() {
+//        for (int i = 0; i < 105'000; ++i) {
+//            sz += isam.search(i).size();
+//        }
+//    }, "Search all");
+//    std::cout << "size: " << sz << std::endl;
 
-    clock([&]() -> void {
-        for (MovieRecord &movie: isam.search(dataId, heap_file_name)) {
+//    clock([&](){
+//        int dataId = 0;
+//        std::cout << "data id: ";
+//        std::cin >> dataId;
+//
+//        for (MovieRecord& movie : isam.search(dataId)) {
+//            std::cout << movie.to_string() << std::endl;
+//        }
+//    }, "Search individual");
+
+    int lower_bound = 0;
+    int upper_bound = 0;
+    std::cout << "lower bound: ";
+    std::cin >> lower_bound;
+    std::cout << "upper bound: ";
+    std::cin >> upper_bound;
+
+    clock([&]() {
+        auto vec = isam.range_search(lower_bound, upper_bound);
+        for (MovieRecord& movie: vec) {
             std::cout << movie.to_string() << std::endl;
         }
-    }, "Search by Id ISAM");
+        std::cout << "total of records: " << vec.size() << std::endl;
+    }, "Range search");
 
     return EXIT_SUCCESS;
 }
