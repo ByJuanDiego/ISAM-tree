@@ -220,7 +220,8 @@ private:
                 data_file.read((char *) &overflow, SIZE(DataPage<Pair<KeyType>>));
 
                 for (int j = 0; j < overflow.n_records; ++j) {
-                    if (!greater(lower_bound, overflow.records[j].key) && !greater(overflow.records[j].key, upper_bound)) {
+                    if (!greater(lower_bound, overflow.records[j].key) &&
+                        !greater(overflow.records[j].key, upper_bound)) {
                         pointers.push_back(overflow.records[j].data_pointer);
                         any_found = true;
                     }
@@ -234,13 +235,29 @@ private:
 
     void search_records(std::vector<long> &pointers, std::vector<RecordType> &records) {
         records.reserve(pointers.size());
-
         std::fstream heap_file(heap_file_name, flags);
         for (long pointer: pointers) {
             RecordType record;
             heap_file.seekg(pointer);
             heap_file.read((char *) &record, SIZE(RecordType));
-            records.push_back(record);
+            if (!record.removed) {
+                records.push_back(record);
+            }
+        }
+        heap_file.close();
+    }
+
+    void remove_records(std::vector<long> &pointers) {
+        std::fstream heap_file(heap_file_name, flags);
+        for (long pointer: pointers) {
+            RecordType record;
+            heap_file.seekg(pointer);
+            heap_file.read((char *) &record, SIZE(RecordType));
+            if (!record.removed) {
+                record.removed = true;
+                heap_file.seekp(pointer);
+                heap_file.write((char *) &record, SIZE(RecordType));
+            }
         }
         heap_file.close();
     }
@@ -340,7 +357,6 @@ public:
     }
 
     std::vector<RecordType> search(KeyType key) {
-        // ⬇️ inits an empty `std::vector` and open the files
         std::vector<long> pointers;
 
         OPEN_FILES(flags);
@@ -350,7 +366,6 @@ public:
         std::vector<RecordType> records;
         search_records(pointers, records);
         return records;
-        // ⬆️ closes each file and returns the result of the search.
     }
 
     std::vector<RecordType> range_search(KeyType lower_bound, KeyType upper_bound) {
@@ -363,6 +378,16 @@ public:
         std::vector<RecordType> records;
         search_records(pointers, records);
         return records;
+    }
+
+    void remove(KeyType key) {
+        std::vector<long> pointers;
+
+        OPEN_FILES(flags);
+        this->search(key, pointers);
+        CLOSE_FILES;
+
+        remove_records(pointers);
     }
 
     /******************************************************************************************************************/

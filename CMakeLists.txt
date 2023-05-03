@@ -3,4 +3,6 @@ project(ISAM)
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_executable(index_by_data_id src/index_by_data_id.cpp)
+add_executable(range_search src/isam_range_search.cpp)
+add_executable(equality_search src/isam_equality_search.cpp)
+add_executable(remove src/isam_remove.cpp)

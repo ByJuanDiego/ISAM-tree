@@ -2,10 +2,6 @@
 // Created by juandiego on 5/2/23.
 //
 
-//
-// Created by juandiego on 5/1/23.
-//
-
 #include "../inc/ISAM.hpp"
 #include "../inc/record.hpp"
 
@@ -19,11 +15,8 @@ int main() {
     ISAM<true, int, MovieRecord, std::function<int(MovieRecord &)>> isam(
             heap_file_name, "./database/isam_indexed_by_dataId.dat", index);
 
-//    std::cout << M<int> << " " << N<Pair<int>> << std::endl;
-//    std::cout << sizeof(IndexPage<int>) << std::endl;
-//    std::cout << sizeof(DataPage<Pair<int>>) << std::endl;
-
     func::clock clock;
+
     clock([&]() -> void {
               if (!isam) {
                   isam.create_index();
@@ -33,24 +26,6 @@ int main() {
           }, "Build ISAM Tree"
     );
 
-//    size_t sz = 0;
-//    clock([&]() {
-//        for (int i = 0; i < 105'000; ++i) {
-//            sz += isam.search(i).size();
-//        }
-//    }, "Search all");
-//    std::cout << "size: " << sz << std::endl;
-
-//    clock([&](){
-//        int dataId = 0;
-//        std::cout << "data id: ";
-//        std::cin >> dataId;
-//
-//        for (MovieRecord& movie : isam.search(dataId)) {
-//            std::cout << movie.to_string() << std::endl;
-//        }
-//    }, "Search individual");
-
     int lower_bound = 0;
     int upper_bound = 0;
     std::cout << "lower bound: ";
@@ -59,12 +34,12 @@ int main() {
     std::cin >> upper_bound;
 
     clock([&]() {
-        auto vec = isam.range_search(lower_bound, upper_bound);
-        for (MovieRecord& movie: vec) {
+        auto records = isam.range_search(lower_bound, upper_bound);
+        for (MovieRecord& movie : records) {
             std::cout << movie.to_string() << std::endl;
         }
-        std::cout << "total of records: " << vec.size() << std::endl;
-    }, "Range search");
+        std::cout << "total of records: " << records.size() << std::endl;
+    }, "Range-search");
 
     return EXIT_SUCCESS;
 }
