@@ -28,18 +28,21 @@ template<bool PrimaryKey,
         typename Greater = std::greater<KeyType>>
 class ISAM {
 private:
+
+    /* Data pages are stored @ the last level */
+    std::fstream data_file;
+    std::string data_file_name; //< The name of the last level file
+    std::string heap_file_name; //< The name of the heap file
+    std::string attribute;      //< The name of the indexing attribute
+
     /* Three levels of index files that stores index pages */
     std::fstream index_file1;
     std::fstream index_file2;
     std::fstream index_file3;
-    std::function<std::string(int)> index_file_name = [](int i, const std::string &relative_path = "./database") {
-        return relative_path + "/index" + std::to_string(i) + ".dat";
-    };//< Gets the name of the ith index file
 
-    /* Data pages are stored @ the last level */
-    std::fstream data_file;
-    std::string data_file_name; //< The name of the database file
-    std::string heap_file_name;
+    std::function<std::string(int)> index_file_name = [&](int i) {
+        return heap_file_name + "_" + attribute + "_index_" + std::to_string(i) + ".isam";
+    }; //< Gets the name of the ith index file
 
     std::ios::openmode flags = std::ios_base::in | std::ios_base::out | std::ios_base::binary;  //< Open mode flags
 
@@ -264,9 +267,12 @@ private:
 
 public:
 
-    explicit ISAM(std::string heap_file_name, std::string file_name, Index index, Greater greater = Greater())
-            : heap_file_name(std::move(heap_file_name)), data_file_name(std::move(file_name)), index(index),
-              greater(greater) {
+    explicit ISAM(const std::string &heap_file_name, std::string _attribute, Index index, Greater greater = Greater())
+            : heap_file_name(heap_file_name), index(index),
+              greater(greater), attribute(std::move(_attribute)) {
+        data_file_name = heap_file_name + "_" + attribute + ".isam";
+        OPEN_FILES(std::ios::app | std::ios::binary);
+        CLOSE_FILES;
     }
 
     ISAM() = default;

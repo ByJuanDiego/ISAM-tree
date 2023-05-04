@@ -7,18 +7,15 @@
 
 int main() {
     std::string heap_file_name = "./database/movies_and_series.dat";
+    std::string attribute = "dataId";
 
-    std::function<int(MovieRecord &)> index = [](MovieRecord &record) -> int {
-        return record.dataId;
-    };
-
-    ISAM<true, int, MovieRecord, std::function<int(MovieRecord &)>> isam(
-            heap_file_name, "./database/isam_indexed_by_dataId.dat", index);
+    std::function<int(MovieRecord &)> index = [](MovieRecord &record) -> int { return record.dataId; };
+    ISAM<true, int, MovieRecord> isam(heap_file_name, attribute, index);
 
     func::clock clock;
-
     clock([&]() -> void {
               if (!isam) {
+                  std::cout << "the isam tree do not exists" << std::endl;
                   isam.create_index();
               } else {
                   std::cout << "isam tree already created" << std::endl;
@@ -35,7 +32,7 @@ int main() {
 
     clock([&]() {
         auto records = isam.range_search(lower_bound, upper_bound);
-        for (MovieRecord& movie : records) {
+        for (MovieRecord &movie: records) {
             std::cout << movie.to_string() << std::endl;
         }
         std::cout << "total of records: " << records.size() << std::endl;
