@@ -277,6 +277,8 @@ public:
     /*   • It assumes that the `sorted_file` has exactly N * (M+1)^3 records, in order to generate a full ISAM-tree   */
     /******************************************************************************************************************/
     void create_index() {
+        drop_index(); // removes all the previous information in the index
+
         std::fstream heap_file(heap_file_name, flags);
         if (!heap_file.is_open()) {
             throw std::runtime_error("Cannot open the file: " + heap_file_name);
@@ -345,6 +347,11 @@ public:
          * pages:    ^[*][*]                                          ^[*][*]
          */
         heap_file.close();
+        CLOSE_FILES;
+    }
+
+    void drop_index() {
+        OPEN_FILES(std::ios::out);
         CLOSE_FILES;
     }
 
